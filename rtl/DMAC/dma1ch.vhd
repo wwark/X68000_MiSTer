@@ -2,6 +2,20 @@ LIBRARY	IEEE;
 USE	IEEE.STD_LOGIC_1164.ALL;
 USE	IEEE.STD_LOGIC_UNSIGNED.ALL;
 
+
+--Reverted back to PUU's solution of 20200827	http://fpga8801.seesaa.net/archives/20200827-1.html
+--puu mentioned in the post of 20200830 that a few DMA changes were made.
+--one of them was the reduction of clock cycles from to 12 to 9, by merging some states.
+--However that specific change caused a few games to corrupt:
+--nemesis '94 no sprites
+--salamander no sprites
+--phalanx  sprites, bullets etc garbled.
+--so reverted the clock cycle reduction code back to code state of 20200827
+
+--now another issue is visible: these fixed games do show timing / speed issues, possibly due to slower DMA ?
+
+
+
 entity dma1ch is
 port(
 	regaddr	:in std_logic_vector(5 downto 0);
@@ -149,10 +163,14 @@ type state_t is(
 	ST_SETSADDR,
 	ST_READ,
 	ST_CHDIR,
+--Reverted back to PUU's solution of 20200827	http://fpga8801.seesaa.net/archives/20200827-1.html
+	ST_SETDADDR,
 	ST_WRITE,
 	ST_NEXT,
 	ST_NBLOCK,
 	ST_CONT,
+--Reverted back to PUU's solution of 20200827	http://fpga8801.seesaa.net/archives/20200827-1.html
+	ST_CONT1,
 	ST_CHAINBUSWAIT,
 	ST_CHAINH,
 	ST_CHAINHA,
@@ -827,6 +845,9 @@ begin
 					when ST_CHDIR =>
 						b_as<='0';
 						b_rwn<='0';
+--Reverted back to PUU's solution of 20200827	http://fpga8801.seesaa.net/archives/20200827-1.html
+					STATE<=ST_SETDADDR;
+				when ST_SETDADDR =>
 						if(OCR_SIZE="01" or OCR_SIZE="10" or packen='1')then
 							b_uds<='0';
 							b_lds<='0';
@@ -865,61 +886,7 @@ begin
 							STATE<=ST_NEXT;
 						end if;
 					when ST_NEXT =>
-						case SCR_MAC is
-						when "01" =>
-							if(packen='1')then
-								MAR_incw<='1';
-							else
-								case OCR_SIZE is
-								when "00" | "11" =>
-									MAR_incb<='1';
-								when "01" =>
-									MAR_incw<='1';
-								when "10" =>
-									MAR_incl<='1';
-								when others =>
-								end case;
-							end if;
-						when "10" =>
-							if(packen='1')then
-								MAR_decw<='1';
-							else
-								case OCR_SIZE is
-								when "00" | "11" =>
-									MAR_decb<='1';
-								when "01" =>
-									MAR_decw<='1';
-								when "10" =>
-									MAR_decl<='1';
-								when others =>
-								end case;
-							end if;
-						when others =>
-						end case;
-
-						case SCR_DAC is
-						when "01" =>
-							if(DCR_DPS='0')then
-								DAR_incw<='1';
-							elsif(OCR_SIZE="01" or packen='1')then
-								DAR_incw<='1';
-							elsif(OCR_SIZE="10")then
-								DAR_incl<='1';
-							else
-								DAR_incb<='1';
-							end if;
-						when "10" =>
-							if(DCR_DPS='0')then
-								DAR_decw<='1';
-							elsif(OCR_SIZE="01" or packen='1')then
-								DAR_decw<='1';
-							elsif(OCR_SIZE="10")then
-								DAR_decl<='1';
-							else
-								DAR_decb<='1';
-							end if;
-						when others =>
-						end case;
+--Reverted back to PUU's solution of 20200827	http://fpga8801.seesaa.net/archives/20200827-1.html
 						if(DCR_DPS='1')then	--16bit
 							case OCR_SIZE is
 							when "00" | "01" | "11" =>
@@ -940,16 +907,8 @@ begin
 										STATE<=ST_IDLE;
 									end if;
 								else
-									--STATE<=ST_CONT;
-									case OCR_REQG is
-									when "00" | "01" =>
-										STATE<=ST_BUSWAIT;
-										reqwait<='1';
-									when "10" | "11" =>
-										busreq<='0';
-										STATE<=ST_RQWAIT;
-									when others =>
-									end case;
+--Reverted back to PUU's solution of 20200827	http://fpga8801.seesaa.net/archives/20200827-1.html
+								STATE<=ST_CONT;
 								end if;
 							when "10" =>
 								bytecnt<=bytecnt+2;
@@ -970,16 +929,8 @@ begin
 											STATE<=ST_IDLE;
 										end if;
 									else
-										--STATE<=ST_CONT;
-										case OCR_REQG is
-										when "00" | "01" =>
-											STATE<=ST_BUSWAIT;
-											reqwait<='1';
-										when "10" | "11" =>
-											busreq<='0';
-											STATE<=ST_RQWAIT;
-										when others =>
-										end case;
+--Reverted back to PUU's solution of 20200827	http://fpga8801.seesaa.net/archives/20200827-1.html
+									STATE<=ST_CONT;
 									end if;
 								else
 									MAR_incw<='1';
@@ -1006,16 +957,8 @@ begin
 										STATE<=ST_IDLE;
 									end if;
 								else
-										--STATE<=ST_CONT;
-									case OCR_REQG is
-									when "00" | "01" =>
-										STATE<=ST_BUSWAIT;
-										reqwait<='1';
-									when "10" | "11" =>
-										busreq<='0';
-										STATE<=ST_RQWAIT;
-									when others =>
-									end case;
+--Reverted back to PUU's solution of 20200827	http://fpga8801.seesaa.net/archives/20200827-1.html
+								STATE<=ST_CONT;
 								end if;
 							when "01" =>
 								bytecnt<=bytecnt+1;
@@ -1034,16 +977,8 @@ begin
 											STATE<=ST_IDLE;
 										end if;
 									else
-										--STATE<=ST_CONT;
-										case OCR_REQG is
-										when "00" | "01" =>
-											STATE<=ST_BUSWAIT;
-											reqwait<='1';
-										when "10" | "11" =>
-											busreq<='0';
-											STATE<=ST_RQWAIT;
-										when others =>
-										end case;
+--Reverted back to PUU's solution of 20200827	http://fpga8801.seesaa.net/archives/20200827-1.html
+									STATE<=ST_CONT;
 									end if;
 								else
 									STATE<=ST_BUSWAIT;
@@ -1059,16 +994,8 @@ begin
 									if(MTC=x"0001")then
 										STATE<=ST_NBLOCK;
 									else
-										--STATE<=ST_CONT;
-										case OCR_REQG is
-										when "00" | "01" =>
-											STATE<=ST_BUSWAIT;
-											reqwait<='1';
-										when "10" | "11" =>
-											busreq<='0';
-											STATE<=ST_RQWAIT;
-										when others =>
-										end case;
+--Reverted back to PUU's solution of 20200827	http://fpga8801.seesaa.net/archives/20200827-1.html
+									STATE<=ST_CONT;
 									end if;
 								else
 									MAR_incb<='1';
@@ -1212,16 +1139,74 @@ begin
 							b_lds<='1';
 							STATE<=ST_BUSCONT;
 						end if;
-	--				when ST_CONT =>
-	--					case OCR_REQG is
-	--					when "00" | "01" =>
-	--						STATE<=ST_BUSWAIT;
-	--						reqwait<='1';
-	--					when "10" | "11" =>
-	--						busreq<='0';
-	--						STATE<=ST_RQWAIT;
-	--					when others =>
-	--					end case;
+--Reverted back to PUU's solution of 20200827	http://fpga8801.seesaa.net/archives/20200827-1.html
+				when ST_CONT =>
+					case SCR_MAC is
+					when "01" =>
+						if(packen='1')then
+							MAR_incw<='1';
+						else
+							case OCR_SIZE is
+							when "00" | "11" =>
+								MAR_incb<='1';
+							when "01" =>
+								MAR_incw<='1';
+							when "10" =>
+								MAR_incl<='1';
+							when others =>
+							end case;
+						end if;
+					when "10" =>
+						if(packen='1')then
+							MAR_decw<='1';
+						else
+							case OCR_SIZE is
+							when "00" | "11" =>
+								MAR_decb<='1';
+							when "01" =>
+								MAR_decw<='1';
+							when "10" =>
+								MAR_decl<='1';
+							when others =>
+							end case;
+						end if;
+					when others =>
+					end case;
+					
+					case SCR_DAC is
+					when "01" =>
+						if(DCR_DPS='0')then
+							DAR_incw<='1';
+						elsif(OCR_SIZE="01" or packen='1')then
+							DAR_incw<='1';
+						elsif(OCR_SIZE="10")then
+							DAR_incl<='1';
+						else
+							DAR_incb<='1';
+						end if;
+					when "10" =>
+						if(DCR_DPS='0')then
+							DAR_decw<='1';
+						elsif(OCR_SIZE="01" or packen='1')then
+							DAR_decw<='1';
+						elsif(OCR_SIZE="10")then
+							DAR_decl<='1';
+						else
+							DAR_decb<='1';
+						end if;
+					when others =>
+					end case;
+					STATE<=ST_CONT1;
+				when ST_CONT1 =>
+					case OCR_REQG is
+					when "00" | "01" =>
+						STATE<=ST_BUSWAIT;
+						reqwait<='1';
+					when "10" | "11" =>
+						busreq<='0';
+						STATE<=ST_RQWAIT;
+					when others =>
+					end case;
 					when ST_BUSCONT =>
 						if(MAR=x"00000000")then
 							int_comp<='1';

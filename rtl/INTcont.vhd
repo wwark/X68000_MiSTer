@@ -4,7 +4,7 @@ use	IEEE.std_logic_unsigned.all;
 
 entity INTcont is
 generic(
-	INText	:integer	:=3
+	INText	:integer	:=2
 );
 port(
 	int7	:in std_logic	:='0';
@@ -253,7 +253,15 @@ begin
 		end if;
 	end process;
 
-	IPL<=INTnum;
+	process(clk,rstn)begin
+		if rising_edge(clk) then
+			if(rstn='0')then
+				IPL<="111";
+			elsif(ce = '1')then
+				IPL<=INTnum;
+			end if;
+		end if;
+	end process;
 
 	iack7<=iackv(7);
 	iack6<=iackv(6);
