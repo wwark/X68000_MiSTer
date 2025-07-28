@@ -321,6 +321,12 @@ signal semitrans:std_logic;
 signal gpriobit:std_logic;
 signal tpriobit:std_logic;
 
+-- vblank fix for new zealand story, but creates bugged castlevania/nemesis'90
+signal early_vblank : std_logic;
+signal double_scan :std_logic := '0'; 
+signal is_480 :std_logic :='0'; 
+signal vheight	:std_logic_vector(9 downto 0);
+
 constant azero	:std_logic_vector(arange-1 downto 0)	:=(others=>'0');
 begin
 	-- g_ddaten<=	'1' when g4_ddat/=x"0" and gmode="00" else
@@ -348,8 +354,29 @@ begin
 		end if;
 	end process;
 
+	--gmode		00:4bit color 	01:8bit color 	11/10:16bit color
+	--memres	0:512x512 		1:1024x1024
+	--hres		00:256 			01:512 			10/11:768
+	--vres	0:256 1:512
 	-- 256 height in high freqency will doublescan the image
-	vaddrmod<= '0' & vaddr(9 downto 1)	when vres='0' and hfreq='1' else vaddr; -- and hfreq='1'
+
+	vheight <= vvend-vvbgn; 
+	
+	double_scan <= '1' when vres='0' and hfreq='1' else '0';	-- 256h and 31KHz
+	
+	is_480 <= '1' when vheight = "000111100000" else '0';		-- 480
+
+	-------------------------------------------------------------------------------------
+	-- new zealand story is double_scan and 480, so early_blank = 1
+	-- HOWEVER castlevania and nemesis'90 also are double_scan and 480
+	-- , but their graphics are wrong when early_blank = 1
+	
+	-- TODO FIX so we need something that new zealand story sets differently than castlevania and nemesis'90
+	-------------------------------------------------------------------------------------
+	
+	early_vblank <= '1' when double_scan='1' and is_480='1' else '0';                                              
+	
+	vaddrmod<= '0' & vaddr(9 downto 1) when double_scan='1' else vaddr;
 	haddrmod<= haddr;
 
 	thaddr_offset<=t_hoffset+haddrmod;
@@ -644,12 +671,22 @@ begin
 					lvviden<=vviden;
 					raster<=raster+"0000000001";
 					hviden<='1';
+					
+					--vblank fix for new zealand story, but creates bugged castlevania/nemesis'90
 
+					--TODO explain why exactly should in some cases vaddr be increased outside vblank check?
+					-- Is this due to overscan area of crt's ?
+					if(early_vblank='1') then
+						vaddr<=vaddr+"0000000001";		--fix for the new zealand story (256x480) 
+					end if;
+					
 					if (raster = vvend-"0000000001") then
 						vviden<='0';
 					end if;
 					if (vblank = '0') then
-						vaddr<=vaddr+"0000000001";
+						if(early_vblank='0') then
+							vaddr<=vaddr+"0000000001";		 
+						end if;
 						g0_clear<=	gclrpage(0) and gclrbusyb;
 						g1_clear<=	gclrpage(1) and gclrbusyb;
 						g2_clear<=	gclrpage(2) and gclrbusyb;
