@@ -171,11 +171,13 @@ constant inum_mm	:integer	:=0;
 signal	intx		:std_logic_vector(7 downto 0);
 signal	intm		:std_logic_vector(7 downto 0);
 signal	intnum	:std_logic_vector(3 downto 0);
-signal	int_low_cnt	:integer range 0 to 3;
 
 signal	gcounter	:std_logic_vector(13 downto 0);
 signal	ccounter	:std_logic_vector(6 downto 0);
 signal	mcounter	:std_logic_vector(13 downto 0);
+
+signal  mscrstep    :std_logic_vector(13 downto 0);
+signal  mclk        :std_logic;
 constant gczero	:std_logic_Vector(13 downto 0)	:=(others=>'0');
 constant cczero	:std_logic_vector(6 downto 0)		:=(others=>'0');
 constant mczero	:std_logic_Vector(13 downto 0)	:=(others=>'0');
@@ -283,7 +285,7 @@ end component;
 
 begin
 
-	txfifo	:datfifo generic map(64,8) port map(
+	txfifo	:datfifo generic map(256,8) port map(
 		datin		=>txfifowdat,
 		datwr		=>txfifowr,
 		
@@ -301,27 +303,23 @@ begin
 		rstn		=>rstn and (not sreset)
 	);
 	
+	-- Reset process: Initializes all internal registers and counters on reset
 	process(clk,rstn)
-	variable l_tx_idle	:std_logic;
+	variable ltxfifoempn	:std_logic;
 	begin
 	if rising_edge(clk) then
 		if(rstn='0')then
 			inttx<='1';
-			l_tx_idle:='1';
+			ltxfifoempn:='0';
 		elsif(ce ='1')then
 			if(sreset='1')then
 				inttx<='1';
-				l_tx_idle:='1';
-			elsif(intclr(inum_tx)='1' or txfifowr='1')then
-				inttx<='0';
-			elsif(txfifoempn='0' and txbusy='0' and l_tx_idle='0')then
+			elsif(txfifoempn='0' and ltxfifoempn='1')then
 				inttx<='1';
+			elsif(intclr(inum_tx)='1')then
+				inttx<='0';
 			end if;
-			if(txfifoempn='1' or txbusy='1')then
-				l_tx_idle:='0';
-			else
-				l_tx_idle:='1';
-			end if;
+			ltxfifoempn:=txfifoempn;
 		end if;
 	end if;
 	end process;
@@ -391,7 +389,7 @@ begin
 			intclr<=(others=>'0');
 			R01<=(others=>'0');
 			R04<=(others=>'0');
-			R05<=(others=>'0');
+			R05<=x"02";
 			R06<=(others=>'0');
 			R14<=(others=>'0');
 			R24<=(others=>'0');
@@ -458,7 +456,7 @@ begin
 				intclr<=(others=>'0');
 				R01<=(others=>'0');
 				R04<=(others=>'0');
-				R05<=(others=>'0');
+				R05<=x"02";
 				R06<=(others=>'0');
 				R14<=(others=>'0');
 				R24<=(others=>'0');
@@ -655,6 +653,7 @@ begin
 	CCLDVAL<=R67(6 downto 0);
 	PCADDVAL<=R77(6 downto 0) & R76;
 	INTRATE<=R75(3 downto 0);
+	mscrstep <= "00000000000001" when R75(3 downto 0)=x"0" else "0000000000" & R75(3 downto 0);
 	GTLDVAL<=R85(5 downto 0) & R84;
 	MTLDVAL<=R87(5 downto 0) & R86;
 	GPOE<=R94;
@@ -1138,40 +1137,43 @@ begin
 		--		if(txemp='1' and txfifoemp='0')then
 		--			txwr<='1';
 		--			txfiford<='1';
-			if(TxCL='0')then
-				txdata(7 downto 0)<=txfifordat;
-				vlen:=8;
-			else
-				txdata(6 downto 0)<=txfifordat(6 downto 0);
-				vlen:=7;
-			end if;
-			if(TxPE='1')then
-				if(TxPL='0')then
-					par:=TxEO;
-					for i in 0 to 7 loop
-						if(TxCL='0' or i<7)then
-							par:=par xor txfifordat(i);
-						end if;
-					end loop;
-					txdata(vlen)<=par;
-					vlen:=vlen+1;
-				else
-					par4:=(others=>TxEO);
-					if(TxCL='0')then
-						par4:=par4 xor txfifordat(3 downto 0) xor txfifordat(7 downto 4);
-					else
-						par4:=par4 xor txfifordat(3 downto 0) xor ('0' & txfifordat(6 downto 4));
-					end if;
-					txdata(vlen+3 downto vlen)<=par4;
-					vlen:=vlen+4;
-				end if;
-			end if;
-			if(TxSL='1')then
-				txdata(vlen)<=not TxST;
-				vlen:=vlen+1;
-			end if;
-			txframelen<=vlen;
+		if(TxCL='0')then
+			txdata(7 downto 0)<=txfifordat;
+			vlen:=8;
+		else
+			txdata(6 downto 0)<=txfifordat(6 downto 0);
+			vlen:=7;
 		end if;
+		if(TxPE='1')then
+			if(TxPL='0')then
+				par:=TxEO;
+				for i in 0 to 7 loop
+					if(TxCL='0' or i<7)then
+						par:=par xor txfifordat(i);
+					end if;
+				end loop;
+				txdata(vlen)<=par;
+				vlen:=vlen+1;
+			else
+				par4:=(others=>TxEO);
+				if(TxCL='0')then
+					par4:=par4 xor txfifordat(3 downto 0) xor txfifordat(7 downto 4);
+				else
+					par4:=par4 xor txfifordat(3 downto 0) xor ('0' & txfifordat(6 downto 4));
+				end if;
+				txdata(vlen+3 downto vlen)<=par4;
+				vlen:=vlen+4;
+			end if;
+		end if;
+		if(TxSL='1')then
+			txdata(vlen)<=not TxST;
+			vlen:=vlen+1;
+		end if;
+		txframelen<=vlen;
+	--			end if;
+	--		end if;
+	--	end if;
+	end if;
 	end process;
 
 	
@@ -1242,7 +1244,7 @@ begin
 				end if;
 				if(CCLD='1')then
 					ccounter<=CCLDVAL;
-				elsif(ccountsft='1')then
+				elsif(mclk='1')then
 					if(ccounter>0)then
 						ccounter<=ccounter-1;
 					elsif(CCLDVAL/=cczero)then
@@ -1260,17 +1262,24 @@ begin
 
 		if(rstn='0')then
 			mcounter<=(others=>'0');
+			mclk<='0';
+
 		elsif(ce ='1')then
+			mclk<='0';
+
 			if(sreset='1')then
 				mcounter<=(Others=>'0');
+
 			else
 				if(MTLD='1')then
 					mcounter<=MTLDVAL;
+
 				elsif(mcountsft='1')then
-					if(mcounter>0)then
-						mcounter<=mcounter-1;
+					if(mcounter>mscrstep)then
+						mcounter<=mcounter-mscrstep;
 					elsif(MTLDVAL/=mczero)then
 						mcounter<=MTLDVAL;
+						mclk<='1';
 					end if;
 				end if;
 			end if;
@@ -1286,8 +1295,8 @@ begin
 	intmm<='0';
 	
 	intx<=intgt & inttx & intrx & intol & intrc & intpc & intcc & intmm;
-	intm<=intx and intmask;
-	R02<=intm;
+	intm<=(intx and intmask) when R05(1)='1' else (others=>'0');
+	R02<=intx;
 	
 	process(intm)
 	variable num	:integer range 0 to 8;
@@ -1299,24 +1308,10 @@ begin
 			end if;
 		end loop;
 		intnum<=conv_std_logic_vector(num,4);
-	end process;
-
-	process(clk,rstn)begin
-		if rising_edge(clk) then
-			if(rstn='0')then
-				INT<='0';
-				int_low_cnt<=0;
-			elsif(ce = '1')then
-				if(intm="00000000")then
-					INT<='0';
-					int_low_cnt<=3;
-				elsif(int_low_cnt>0)then
-					INT<='0';
-					int_low_cnt<=int_low_cnt-1;
-				else
-					INT<='1';
-				end if;
-			end if;
+		if(num=8)then
+			INT<='0';
+		else
+			INT<='1';
 		end if;
 	end process;
 	
